@@ -38,9 +38,12 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'authapp',
+    'rest_framework', # Django REST Framework for APIs
+    'corsheaders', # Enable cross-origin requests for frontend apps
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware', # Must be at the top for CORS to work
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -51,6 +54,11 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = 'backend.urls'
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000", # Local frontend running on port 3000
+    "http://127.0.0.1:3000", # Alternative localhost address
+]
 
 TEMPLATES = [
     {

@@ -6,13 +6,6 @@ from django.contrib.auth import login
 from django.views.decorators.csrf import ensure_csrf_cookie
 from .serializers import UserSerializer
 
-# Endpoint to set CSRF cookie
-@ensure_csrf_cookie
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def get_csrf(request):
-    return Response({"message": "CSRF cookie set"})
-
 # Register API
 @api_view(['POST'])
 @permission_classes([AllowAny])

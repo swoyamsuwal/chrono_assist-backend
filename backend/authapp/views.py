@@ -3,7 +3,15 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from django.contrib.auth import authenticate, login
+from django.views.decorators.csrf import ensure_csrf_cookie
 from .serializers import UserSerializer
+
+# Endpoint to set CSRF cookie
+@ensure_csrf_cookie
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_csrf(request):
+    return Response({"message": "CSRF cookie set"})
 
 # Register API
 @api_view(['POST'])

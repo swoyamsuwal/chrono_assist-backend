@@ -59,7 +59,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000", # Local frontend running on port 3000
     "http://127.0.0.1:3000", # Alternative localhost address
 ]
-
+CORS_ALLOW_CREDENTIALS = True
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -87,7 +87,7 @@ DATABASES = {
         'NAME': 'chrono_assist',           # your database name
         'USER': 'postgres',         # default user for PostgreSQL
         'PASSWORD': '12345678',     # your password
-        'HOST': 'host.docker.internal',        # or '127.0.0.1'
+        'HOST': '127.0.0.1',    # or '127.0.0.1'
         'PORT': '5432',             # default PostgreSQL port
     }
 }
@@ -133,3 +133,7 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+LOGIN_URL = '/accounts/login'
+LOGIN_REDIRECT_URL = '/authapp/'
+LOGOUT_REDIRECT_URL = '/authapp/'

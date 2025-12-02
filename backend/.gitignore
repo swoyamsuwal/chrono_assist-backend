@@ -12,8 +12,9 @@ env/
 staticfiles/
 media/
 
-# VSCode
-.vscode/
+# MinIO data
+minio/
+*.meta
 
 # Logs
 *.log

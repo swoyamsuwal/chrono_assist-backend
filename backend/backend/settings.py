@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'authapp',
     'rest_framework', # Django REST Framework for APIs
     'corsheaders', # Enable cross-origin requests for frontend apps
+    'storages',
 ]
 
 MIDDLEWARE = [
@@ -73,6 +74,19 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 
+# MinIO / S3 settings
+DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+
+AWS_ACCESS_KEY_ID = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
+AWS_SECRET_ACCESS_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin123")
+AWS_STORAGE_BUCKET_NAME = os.getenv("MINIO_BUCKET_NAME", "chrono-media")
+
+# For local MinIO
+AWS_S3_ENDPOINT_URL = os.getenv("MINIO_ENDPOINT_URL", "http://localhost:9000")
+AWS_S3_REGION_NAME = "us-east-1"
+AWS_S3_USE_SSL = False
+AWS_S3_VERIFY = False
+
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -97,11 +111,11 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'chrono',           # your database name
-        'USER': 'postgres',         # default user for PostgreSQL
-        'PASSWORD': '12345678',     # your password
-        'HOST': '127.0.0.1',    # or '127.0.0.1'
-        'PORT': '5432',             # default PostgreSQL port
+        'NAME': os.getenv("DB_NAME", "chrono"),
+        'USER': os.getenv("DB_USER", "postgres"),
+        'PASSWORD': os.getenv("DB_PASSWORD", ""),
+        'HOST': os.getenv("DB_HOST", "127.0.0.1"),
+        'PORT': os.getenv("DB_PORT", "5432"),
     }
 }
 

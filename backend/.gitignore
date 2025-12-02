@@ -14,7 +14,9 @@ media/
 
 # MinIO data
 minio/
+.minio.sys/
 *.meta
+format.json
 
 # Logs
 *.log

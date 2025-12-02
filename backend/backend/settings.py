@@ -87,6 +87,8 @@ AWS_S3_REGION_NAME = "us-east-1"
 AWS_S3_USE_SSL = False
 AWS_S3_VERIFY = False
 
+AUTH_USER_MODEL = "authapp.User"  #  tells Django which model is your “User” model. Without it, Django uses the built‑in auth.User
+
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',

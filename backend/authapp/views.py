@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.utils import timezone
 from django.contrib.auth import authenticate, login, get_user_model
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -8,8 +10,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from .serializers import UserSerializer
-from .models import OtpCode
-from .utils import send_otp_email
+from .utils import send_otp_email, generate_otp_code
 
 User = get_user_model()
 
@@ -49,6 +50,25 @@ def register_api(request):
         status=status.HTTP_201_CREATED,
     )
 
+# ---------- helper: set OTP in user.metadata ----------
+
+def set_login_otp_on_user(user: User, ttl_minutes: int = 5) -> None:
+    code = generate_otp_code()
+    expires_at = timezone.now() + timedelta(minutes=ttl_minutes)
+
+    meta = user.metadata or {}
+    meta["otp"] = {
+        "code": code,
+        "purpose": "login",
+        "expires_at": expires_at.isoformat(),
+        "attempts": 0,
+        "is_used": False,
+    }
+    user.metadata = meta
+    user.save(update_fields=["metadata"])
+
+    send_otp_email(user.email, code, purpose="Login")
+
 # ---------- LOGIN (step 1: email + password -> send OTP) ----------
 
 @api_view(["POST"])
@@ -81,18 +101,13 @@ def login_api(request):
             status=status.HTTP_403_FORBIDDEN,
         )
 
-    # 1) create OTP
-    otp_obj = OtpCode.create_for_user(user, purpose="login")
+    # store OTP info in user.metadata and send email
+    set_login_otp_on_user(user, ttl_minutes=5)
 
-    # 2) send email
-    send_otp_email(user.email, otp_obj.code, purpose="Login")
-
-    # 3) return info for frontend (NO login() yet)
     return Response(
         {
             "message": "OTP sent to email",
             "otp_required": True,
-            "otp_id": str(otp_obj.id),  # frontend stores this
             "email": user.email,
         },
         status=status.HTTP_200_OK,
@@ -103,37 +118,55 @@ def login_api(request):
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def verify_otp_api(request):
-    otp_id = request.data.get("otp_id")
+    email = request.data.get("email")
     code = request.data.get("code")
 
-    if not otp_id or not code:
+    if not email or not code:
         return Response(
-            {"error": "otp_id and code are required."},
+            {"error": "email and code are required."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
     try:
-        otp_obj = OtpCode.objects.select_related("user").get(id=otp_id)
-    except OtpCode.DoesNotExist:
-        return Response({"error": "Invalid OTP session."}, status=status.HTTP_400_BAD_REQUEST)
+        user = User.objects.get(email=email)
+    except User.DoesNotExist:
+        return Response({"error": "User not found."}, status=status.HTTP_400_BAD_REQUEST)
 
-    if otp_obj.is_used:
+    meta = user.metadata or {}
+    otp_data = meta.get("otp")
+
+    if not otp_data:
+        return Response({"error": "No OTP pending."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if otp_data.get("is_used"):
         return Response({"error": "OTP already used."}, status=status.HTTP_400_BAD_REQUEST)
 
-    if timezone.now() > otp_obj.expires_at:
+    # parse expires_at
+    expires_at_str = otp_data.get("expires_at")
+    try:
+        expires_at = timezone.datetime.fromisoformat(expires_at_str)
+        if timezone.is_naive(expires_at):
+            expires_at = timezone.make_aware(expires_at, timezone.utc)
+    except Exception:
+        return Response({"error": "Invalid OTP data."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if timezone.now() > expires_at:
         return Response({"error": "OTP expired."}, status=status.HTTP_400_BAD_REQUEST)
 
-    if otp_obj.code != code:
-        otp_obj.attempts += 1
-        otp_obj.save(update_fields=["attempts"])
+    if otp_data.get("code") != code:
+        otp_data["attempts"] = int(otp_data.get("attempts", 0)) + 1
+        meta["otp"] = otp_data
+        user.metadata = meta
+        user.save(update_fields=["metadata"])
         return Response({"error": "Incorrect OTP."}, status=status.HTTP_400_BAD_REQUEST)
 
     # mark used
-    otp_obj.is_used = True
-    otp_obj.save(update_fields=["is_used"])
+    otp_data["is_used"] = True
+    meta["otp"] = otp_data
+    user.metadata = meta
+    user.save(update_fields=["metadata"])
 
-    user = otp_obj.user
-    if user is None or not user.is_active:
+    if not user.is_active:
         return Response({"error": "User not available."}, status=status.HTTP_400_BAD_REQUEST)
 
     # now create session

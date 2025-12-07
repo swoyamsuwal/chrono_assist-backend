@@ -12,6 +12,9 @@ env/
 staticfiles/
 media/
 
+# Environment / secrets
+.env
+
 # MinIO data
 minio/
 .minio.sys/

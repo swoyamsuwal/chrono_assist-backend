@@ -22,7 +22,7 @@ User = get_user_model()
 def get_csrf(request):
     return Response({"message": "CSRF cookie set"})
 
-# ---------- REGISTER (no OTP yet) ----------
+# ---------- REGISTER ----------
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -32,10 +32,12 @@ def register_api(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     user = serializer.save()
+    # IMPORTANT: make username = email so JWT can use email as username
+    user.username = serializer.validated_data["email"]
     user.set_password(serializer.validated_data["password"])
     user.save()
 
-    # auto-login after register (no OTP for now)
+    # optional: session login; JWT will be used for APIs
     login(request, user)
 
     return Response(
@@ -84,12 +86,10 @@ def login_api(request):
         )
 
     try:
-        # find user by email
         user_obj = User.objects.get(email=email)
     except User.DoesNotExist:
         return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 
-    # authenticate using username under the hood
     user = authenticate(request, username=user_obj.username, password=password)
 
     if user is None:
@@ -101,7 +101,6 @@ def login_api(request):
             status=status.HTTP_403_FORBIDDEN,
         )
 
-    # store OTP info in user.metadata and send email
     set_login_otp_on_user(user, ttl_minutes=5)
 
     return Response(
@@ -141,7 +140,6 @@ def verify_otp_api(request):
     if otp_data.get("is_used"):
         return Response({"error": "OTP already used."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # parse expires_at
     expires_at_str = otp_data.get("expires_at")
     try:
         expires_at = timezone.datetime.fromisoformat(expires_at_str)
@@ -169,7 +167,7 @@ def verify_otp_api(request):
     if not user.is_active:
         return Response({"error": "User not available."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # now create session
+    # optional: keep session login
     login(request, user)
 
     return Response(

@@ -79,6 +79,11 @@ CORS_ALLOWED_ORIGINS = [
 ]
 CORS_ALLOW_CREDENTIALS = True
 
+AUTHENTICATION_BACKENDS = [
+    'authapp.auth_backend.EmailAuthBackend',  # our custom backend
+    'django.contrib.auth.backends.ModelBackend',  # default
+]
+
 # Email
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = "smtp.gmail.com"

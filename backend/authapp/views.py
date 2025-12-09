@@ -28,17 +28,22 @@ def get_csrf(request):
 @permission_classes([AllowAny])
 def register_api(request):
     serializer = UserSerializer(data=request.data)
+
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    # Save user from validated serializer
     user = serializer.save()
-    # IMPORTANT: make username = email so JWT can use email as username
-    user.username = serializer.validated_data["email"]
+
+    # Correct mapping
+    user.username = serializer.validated_data["username"]   # <-- name
+    user.email = serializer.validated_data["email"]         # <-- email
     user.set_password(serializer.validated_data["password"])
     user.save()
 
-    # optional: session login; JWT will be used for APIs
-    login(request, user)
+    # Optional: login to create a session
+    login(request, user, backend='authapp.auth_backend.EmailAuthBackend')
+
 
     return Response(
         {
@@ -71,7 +76,7 @@ def set_login_otp_on_user(user: User, ttl_minutes: int = 5) -> None:
 
     send_otp_email(user.email, code, purpose="Login")
 
-# ---------- LOGIN (step 1: email + password -> send OTP) ----------
+# ---------- LOGIN STEP 1 (email + password -> send OTP) ----------
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -86,11 +91,13 @@ def login_api(request):
         )
 
     try:
+        # Find user by email
         user_obj = User.objects.get(email=email)
     except User.DoesNotExist:
         return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 
-    user = authenticate(request, username=user_obj.username, password=password)
+    # Authenticate using username from DB
+    user = authenticate(request, email=email, password=password)
 
     if user is None:
         return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
@@ -112,7 +119,7 @@ def login_api(request):
         status=status.HTTP_200_OK,
     )
 
-# ---------- VERIFY OTP (step 2: finish login) ----------
+# ---------- VERIFY OTP STEP 2 ----------
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -158,7 +165,7 @@ def verify_otp_api(request):
         user.save(update_fields=["metadata"])
         return Response({"error": "Incorrect OTP."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # mark used
+    # Mark OTP used
     otp_data["is_used"] = True
     meta["otp"] = otp_data
     user.metadata = meta
@@ -167,8 +174,9 @@ def verify_otp_api(request):
     if not user.is_active:
         return Response({"error": "User not available."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # optional: keep session login
-    login(request, user)
+    # Keep session
+    login(request, user, backend='authapp.auth_backend.EmailAuthBackend')
+
 
     return Response(
         {

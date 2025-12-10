@@ -16,20 +16,14 @@ def list_files(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])  # JWT-based auth
+@permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
 def upload_file(request):
-    """
-    POST multipart/form-data:
-      - file: the uploaded file
-      - original_filename: optional custom name; if empty, use file.name
-    """
     serializer = DocumentSerializer(data=request.data, context={"request": request})
     if serializer.is_valid():
-        doc = serializer.save()
-        return Response(DocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])

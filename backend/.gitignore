@@ -15,11 +15,8 @@ media/
 # Environment / secrets
 .env
 
-# MinIO data
-minio/
-.minio.sys/
-*.meta
-format.json
+# Ignore all MinIO data
+minio-data/
 
 # Logs
 *.log

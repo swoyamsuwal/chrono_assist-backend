@@ -2,20 +2,26 @@ from rest_framework import serializers
 from .models import Document
 
 class DocumentSerializer(serializers.ModelSerializer):
-    # allow frontend to override name; if empty, we use file.name
     original_filename = serializers.CharField(required=False, allow_blank=True)
+    file_url = serializers.SerializerMethodField()  # <-- NEW
 
     class Meta:
         model = Document
         fields = [
             "id",
             "file",
+            "file_url",              # include new field
             "original_filename",
             "mime_type",
             "file_size",
             "created_at",
         ]
-        read_only_fields = ["id", "created_at", "mime_type", "file_size"]
+        read_only_fields = ["id", "created_at", "mime_type", "file_size", "file_url"]
+
+    def get_file_url(self, obj):
+        if obj.file:
+            return obj.file.url  # S3/MinIO URL
+        return None
 
     def create(self, validated_data):
         file_obj = validated_data["file"]

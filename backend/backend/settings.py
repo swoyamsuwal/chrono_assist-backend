@@ -92,18 +92,26 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 
-# MinIO / S3 settings
+# FILE STORAGE (MinIO / S3)
+MINIO_ENDPOINT_URL = os.environ.get("MINIO_ENDPOINT_URL")
+MINIO_ACCESS_KEY = os.environ.get("MINIO_ACCESS_KEY")
+MINIO_SECRET_KEY = os.environ.get("MINIO_SECRET_KEY")
+MINIO_BUCKET_NAME = os.environ.get("MINIO_BUCKET_NAME")
+
 DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
 
-AWS_ACCESS_KEY_ID = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-AWS_SECRET_ACCESS_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin123")
-AWS_STORAGE_BUCKET_NAME = os.getenv("MINIO_BUCKET_NAME", "chrono-media")
-
-# For local MinIO
-AWS_S3_ENDPOINT_URL = os.getenv("MINIO_ENDPOINT_URL", "http://localhost:9000")
-AWS_S3_REGION_NAME = "us-east-1"
+AWS_S3_ENDPOINT_URL = MINIO_ENDPOINT_URL
+AWS_ACCESS_KEY_ID = MINIO_ACCESS_KEY
+AWS_SECRET_ACCESS_KEY = MINIO_SECRET_KEY
+AWS_STORAGE_BUCKET_NAME = MINIO_BUCKET_NAME
 AWS_S3_USE_SSL = False
 AWS_S3_VERIFY = False
+
+# extra options that often matter for MinIO
+AWS_S3_REGION_NAME = "us-east-1"
+AWS_DEFAULT_ACL = None
+AWS_S3_ADDRESSING_STYLE = "path"
+AWS_QUERYSTRING_AUTH = False
 
 AUTH_USER_MODEL = "authapp.User"  #  tells Django which model is your “User” model. Without it, Django uses the built‑in auth.User
 

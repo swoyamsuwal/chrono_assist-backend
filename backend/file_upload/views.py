@@ -6,6 +6,7 @@ from rest_framework import status
 
 from .models import Document
 from .serializers import DocumentSerializer
+from .embedding_file import create_embeddings_for_document
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -45,3 +46,26 @@ def delete_file(request):
     doc.file.delete(save=False)
     doc.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def embed_file(request):
+  doc_id = request.data.get("id")
+  if not doc_id:
+    return Response({"error": "id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+  try:
+    doc = Document.objects.get(id=doc_id, user=request.user)
+  except Document.DoesNotExist:
+    return Response({"error": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+  count = create_embeddings_for_document(doc)
+
+  return Response(
+    {
+      "document_id": str(doc.id),
+      "chunks_created": count,
+      "is_embedded": doc.is_embedded,
+    },
+    status=status.HTTP_200_OK,
+  )

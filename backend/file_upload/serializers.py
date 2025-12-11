@@ -14,9 +14,10 @@ class DocumentSerializer(serializers.ModelSerializer):
             "original_filename",
             "mime_type",
             "file_size",
+            "is_embedded", 
             "created_at",
         ]
-        read_only_fields = ["id", "created_at", "mime_type", "file_size", "file_url"]
+        read_only_fields = ["id", "created_at", "mime_type", "file_size", "file_url", "is_embedded"]
 
     def get_file_url(self, obj):
         if obj.file:

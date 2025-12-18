@@ -5,11 +5,11 @@ from django.contrib.auth import authenticate, login, get_user_model
 from django.views.decorators.csrf import ensure_csrf_cookie
 
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from .serializers import UserSerializer
+from .serializers import UserSerializer, ProfileSerializer
 from .utils import send_otp_email, generate_otp_code
 
 User = get_user_model()
@@ -189,3 +189,25 @@ def verify_otp_api(request):
         },
         status=status.HTTP_200_OK,
     )
+
+@api_view(["GET", "PUT"])
+@permission_classes([IsAuthenticated])
+def profile_api(request):
+    """
+    GET -> return current user's profile
+    PUT -> update username, first_name, last_name, profile_picture
+           (partial updates allowed, JSON or multipart)
+    """
+    user = request.user
+
+    if request.method == "GET":
+        serializer = ProfileSerializer(user)
+        return Response(serializer.data)
+
+    serializer = ProfileSerializer(user, data=request.data, partial=True)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+
+    print("Profile validation errors:", serializer.errors)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

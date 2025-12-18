@@ -191,3 +191,5 @@ def rag_chat(request):
         return Response({
             "error": f"RAG failed: {str(e)}"
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+

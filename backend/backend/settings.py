@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'authapp',
+    'mail',
     'file_upload',
     'rest_framework', # Django REST Framework for APIs
     'corsheaders', # Enable cross-origin requests for frontend apps

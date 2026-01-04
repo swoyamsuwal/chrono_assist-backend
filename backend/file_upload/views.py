@@ -19,7 +19,21 @@ LLM_MODEL_NAME = "llama3.2:3b"
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def list_files(request):
-    docs = Document.objects.filter(user=request.user).order_by("-created_at")
+    user = request.user
+
+    # 1️⃣ Decide group ID from USER model
+    if user.follow_user:
+        group_id = user.follow_user.id
+    else:
+        group_id = user.id
+
+    # 2️⃣ Fetch documents belonging to this group
+    docs = (
+        Document.objects
+        .filter(follow_group=group_id)
+        .order_by("-created_at")
+    )
+
     serializer = DocumentSerializer(docs, many=True)
     return Response(serializer.data)
 

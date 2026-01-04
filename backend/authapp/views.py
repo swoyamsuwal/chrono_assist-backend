@@ -3,6 +3,7 @@ from datetime import timedelta
 from django.utils import timezone
 from django.contrib.auth import authenticate, login, get_user_model
 from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.csrf import csrf_exempt
 
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -24,6 +25,7 @@ def get_csrf(request):
 
 # ---------- REGISTER ----------
 
+@csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register_api(request):
@@ -34,17 +36,14 @@ def register_api(request):
 
     # Save user from validated serializer
     user = serializer.save()
-
-    # Correct mapping
-    user.username = serializer.validated_data["username"]   # <-- name
-    user.email = serializer.validated_data["email"]         # <-- email
-    user.set_password(serializer.validated_data["password"])
-    user.save()
-
-    # Optional: login to create a session
+    
+    # If MAIN user, set follow_user to SELF
+    if user.user_type == User.UserType.MAIN:
+        user.follow_user = user  # Self-reference!
+        user.save(update_fields=['follow_user'])
+        print(f"MAIN user {user.id} → self-follow set")
+    
     login(request, user, backend='authapp.auth_backend.EmailAuthBackend')
-
-
     return Response(
         {
             "message": "User registered successfully",
@@ -52,10 +51,48 @@ def register_api(request):
                 "id": user.id,
                 "username": user.username,
                 "email": user.email,
+                "user_type": user.user_type,
+                "follow_user": user.follow_user_id if user.follow_user else None
             },
         },
         status=status.HTTP_201_CREATED,
     )
+
+# ---------- SUB REGISTER ----------
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def sub_register_api(request):
+    # Get logged-in main user
+    main_user = request.user
+    
+    serializer = UserSerializer(data=request.data)
+    
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Create sub user
+    sub_user = serializer.save()
+    sub_user.user_type = User.UserType.SUB  # Hardcoded
+    sub_user.follow_user = main_user         # Set foreign key to logged-in user
+    sub_user.save(update_fields=['user_type', 'follow_user'])
+    
+    print(f"SUB user {sub_user.id} → follow_user set to {main_user.id}")
+    
+    return Response(
+        {
+            "message": "Sub-account created successfully",
+            "user": {
+                "id": sub_user.id,
+                "username": sub_user.username,
+                "email": sub_user.email,
+                "user_type": sub_user.user_type,
+                "follow_user": sub_user.follow_user_id
+            },
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
 
 # ---------- helper: set OTP in user.metadata ----------
 

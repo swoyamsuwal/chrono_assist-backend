@@ -15,6 +15,7 @@ class Document(models.Model):
         db_column="user_id",
         related_name="documents",
     )
+    follow_group = models.PositiveIntegerField(default=0)
     file = models.FileField(upload_to="uploads/", storage=s3_storage)  # force MinIO storage
     original_filename = models.CharField(max_length=255)
     mime_type = models.CharField(max_length=255, blank=True)

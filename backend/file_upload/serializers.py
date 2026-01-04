@@ -3,7 +3,7 @@ from .models import Document
 
 class DocumentSerializer(serializers.ModelSerializer):
     original_filename = serializers.CharField(required=False, allow_blank=True)
-    file_url = serializers.SerializerMethodField()  # <-- NEW
+    file_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Document
@@ -14,6 +14,7 @@ class DocumentSerializer(serializers.ModelSerializer):
             "original_filename",
             "mime_type",
             "file_size",
+            "follow_group",
             "is_embedded", 
             "created_at",
         ]
@@ -25,16 +26,12 @@ class DocumentSerializer(serializers.ModelSerializer):
         return None
 
     def create(self, validated_data):
+        request = self.context.get("request")
+        user = request.user
         file_obj = validated_data["file"]
-        name = validated_data.get("original_filename") or file_obj.name
-
-        validated_data["original_filename"] = name
+        validated_data["original_filename"] = file_obj.name
         validated_data["mime_type"] = getattr(file_obj, "content_type", "")
         validated_data["file_size"] = file_obj.size
-
-        request = self.context.get("request")
-        if not request or not request.user or not request.user.is_authenticated:
-            raise serializers.ValidationError("User must be authenticated to upload.")
-        validated_data["user"] = request.user
-
+        validated_data["user"] = user
+        validated_data["follow_group"] = user.follow_user.id if user.follow_user else user.id
         return super().create(validated_data)

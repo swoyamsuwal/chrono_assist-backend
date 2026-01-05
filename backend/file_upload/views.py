@@ -3,31 +3,24 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework import status
-from pgvector.django import CosineDistance 
+from pgvector.django import CosineDistance
 
 from .models import Document, DocumentChunk
 from .serializers import DocumentSerializer
 from .embedding_file import create_embeddings_for_document
+from .utils import get_group_id  # helper
 from ollama import Client
-from django.db import connection
-import json
 
 # ---------------- RAG Configuration ----------------
 EMBEDDING_MODEL_NAME = "all-minilm:l6-v2"
 LLM_MODEL_NAME = "llama3.2:3b"
 
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def list_files(request):
-    user = request.user
+    group_id = get_group_id(request.user)
 
-    # 1️⃣ Decide group ID from USER model
-    if user.follow_user:
-        group_id = user.follow_user.id
-    else:
-        group_id = user.id
-
-    # 2️⃣ Fetch documents belonging to this group
     docs = (
         Document.objects
         .filter(follow_group=group_id)
@@ -48,13 +41,16 @@ def upload_file(request):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])
 def delete_file(request):
     """
     DELETE JSON body:
       - id: document UUID
-    Only deletes documents owned by current user.
+
+    Safer rule for group-sharing:
+    - allow delete only if requester is the owner (same as you had)
     """
     doc_id = request.data.get("id")
     if not doc_id:
@@ -73,12 +69,18 @@ def delete_file(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def embed_file(request):
+    """
+    If you want followers to embed files uploaded by anyone in the same group,
+    fetch the doc by (id + follow_group), not (id + user).
+    """
     doc_id = request.data.get("id")
     if not doc_id:
         return Response({"error": "id is required."}, status=status.HTTP_400_BAD_REQUEST)
 
+    group_id = get_group_id(request.user)
+
     try:
-        doc = Document.objects.get(id=doc_id, user=request.user)
+        doc = Document.objects.get(id=doc_id, follow_group=group_id)
     except Document.DoesNotExist:
         return Response({"error": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -96,34 +98,27 @@ def embed_file(request):
 
 # ---------------- RAG Functions ----------------
 def embed_query(text: str):
-    """Step 1: Convert question to embedding vector using Ollama"""
     client = Client()
     resp = client.embeddings(model=EMBEDDING_MODEL_NAME, prompt=text)
-    return resp["embedding"]  # list[float]
+    return resp["embedding"]
 
 
 def search_similar_chunks(user, query_vector, top_k=10):
     """
-    Use pgvector's CosineDistance on the VectorField via Django ORM.
-    Also print the top-k similar chunks' text to the terminal.
+    Group-based retrieval:
+    only search chunks belonging to documents with the same follow_group.
     """
+    group_id = get_group_id(user)
+
     qs = (
         DocumentChunk.objects
-        .filter(document__user=user, document__is_embedded=True)
+        .filter(document__follow_group=group_id, document__is_embedded=True)
         .annotate(distance=CosineDistance("embedding", query_vector))
         .order_by("distance")[:top_k]
     )
 
     results = []
-    print("\n=== Top similar chunks ===")
-    for idx, c in enumerate(qs):
-        print(f"\n--- Chunk {idx + 1} ---")
-        print(f"ID: {c.id}")
-        print(f"Document ID: {c.document_id}")
-        print(f"Distance: {getattr(c, 'distance', None)}")
-        print("Text:")
-        print(c.text)  # full text; change to c.text[:200] if too long
-
+    for c in qs:
         results.append(
             {
                 "id": str(c.id),
@@ -131,14 +126,10 @@ def search_similar_chunks(user, query_vector, top_k=10):
                 "document_id": str(c.document_id),
             }
         )
-
-    if not results:
-        print("No similar chunks found.")
-
     return results
 
+
 def build_prompt(question: str, chunks: list[dict], history: list[dict]):
-    # history is a list of {role, content}, like ChatGPT
     history_text = ""
     for msg in history[-6:]:
         history_text += f"{msg['role'].upper()}: {msg['content']}\n"
@@ -155,15 +146,10 @@ def build_prompt(question: str, chunks: list[dict], history: list[dict]):
     )
     return prompt
 
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def rag_chat(request):
-    """
-    Step 4: Full RAG pipeline endpoint
-    
-    Input: {question: str, history: [{role, content}]}
-    Output: {answer: str, chunks: [...]}
-    """
     data = request.data
     question = data.get("question", "").strip()
     history = data.get("history", []) or []
@@ -172,10 +158,9 @@ def rag_chat(request):
         return Response({"error": "question is required"}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        # Step 1: Embed the question
         query_vec = embed_query(question)
 
-        # Step 2: Retrieve top-10 similar chunks for this user
+        # now uses group retrieval internally
         chunks = search_similar_chunks(request.user, query_vec, top_k=10)
 
         if not chunks:
@@ -184,10 +169,8 @@ def rag_chat(request):
                 "chunks": []
             })
 
-        # Step 3: Build RAG prompt
         prompt = build_prompt(question, chunks, history)
 
-        # Step 4: Generate answer with Ollama
         client = Client()
         resp = client.chat(
             model=LLM_MODEL_NAME,
@@ -197,13 +180,9 @@ def rag_chat(request):
 
         return Response({
             "answer": answer,
-            "chunks": chunks,  # for debugging
+            "chunks": chunks,
             "chunk_count": len(chunks)
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
-        return Response({
-            "error": f"RAG failed: {str(e)}"
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
+        return Response({"error": f"RAG failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

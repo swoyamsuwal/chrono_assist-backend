@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'rest_framework', # Django REST Framework for APIs
     'corsheaders', # Enable cross-origin requests for frontend apps
     'storages',
+    'rbac',
 ]
 
 MIDDLEWARE = [
@@ -84,6 +85,9 @@ AUTHENTICATION_BACKENDS = [
     'authapp.auth_backend.EmailAuthBackend',  # our custom backend
     'django.contrib.auth.backends.ModelBackend',  # default
 ]
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 # Email
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"

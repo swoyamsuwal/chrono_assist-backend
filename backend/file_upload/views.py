@@ -1,4 +1,5 @@
 from rest_framework.decorators import api_view, permission_classes, parser_classes
+from .rbac_perms import CanViewFiles, CanUploadFiles, CanDeleteFiles, CanEmbedFiles, CanRagChat
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
@@ -17,7 +18,7 @@ LLM_MODEL_NAME = "llama3.2:3b"
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated,CanViewFiles])
 def list_files(request):
     group_id = get_group_id(request.user)
 
@@ -32,7 +33,7 @@ def list_files(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated,CanUploadFiles])
 @parser_classes([MultiPartParser, FormParser])
 def upload_file(request):
     serializer = DocumentSerializer(data=request.data, context={"request": request})
@@ -43,7 +44,7 @@ def upload_file(request):
 
 
 @api_view(["DELETE"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated,CanDeleteFiles])
 def delete_file(request):
     """
     DELETE JSON body:
@@ -148,7 +149,7 @@ def build_prompt(question: str, chunks: list[dict], history: list[dict]):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated,CanRagChat])
 def rag_chat(request):
     data = request.data
     question = data.get("question", "").strip()

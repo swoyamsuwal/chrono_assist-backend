@@ -91,3 +91,6 @@ def send_otp_email(to_email: str, code: str, purpose: str = "Login"):
         fail_silently=False,
         html_message=html_message,
     )
+
+def get_group_id(user) -> int:
+    return user.follow_user_id or user.id

@@ -4,6 +4,8 @@ from django.utils import timezone
 from django.contrib.auth import authenticate, login, get_user_model
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.csrf import csrf_exempt
+from rbac.models import Role
+from file_upload.utils import get_group_id 
 
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -63,36 +65,43 @@ def register_api(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def sub_register_api(request):
-    # Get logged-in main user
     main_user = request.user
-    
+    group_id = get_group_id(main_user)
+
+    role_id = request.data.get("role_id")
+    if not role_id:
+        return Response({"error": "role_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        role = Role.objects.get(id=role_id, group_id=group_id)
+    except Role.DoesNotExist:
+        return Response({"error": "Invalid role for this company"}, status=status.HTTP_400_BAD_REQUEST)
+
     serializer = UserSerializer(data=request.data)
-    
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    # Create sub user
+
     sub_user = serializer.save()
-    sub_user.user_type = User.UserType.SUB  # Hardcoded
-    sub_user.follow_user = main_user         # Set foreign key to logged-in user
-    sub_user.save(update_fields=['user_type', 'follow_user'])
-    
-    print(f"SUB user {sub_user.id} → follow_user set to {main_user.id}")
-    
+    sub_user.user_type = User.UserType.SUB
+    sub_user.follow_user = main_user
+    sub_user.role = role
+    sub_user.save(update_fields=['user_type', 'follow_user', 'role'])
+
     return Response(
         {
-            "message": "Sub-account created successfully",
+            "message": "Sub user registered successfully",
             "user": {
                 "id": sub_user.id,
                 "username": sub_user.username,
                 "email": sub_user.email,
                 "user_type": sub_user.user_type,
-                "follow_user": sub_user.follow_user_id
+                "follow_user": sub_user.follow_user_id if sub_user.follow_user else None,
+                "role": sub_user.role.name if sub_user.role else None,
+                "role_id": sub_user.role_id,
             },
         },
         status=status.HTTP_201_CREATED,
     )
-
 
 # ---------- helper: set OTP in user.metadata ----------
 
@@ -248,3 +257,35 @@ def profile_api(request):
 
     print("Profile validation errors:", serializer.errors)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# ---------- Data for loading sub user ----------
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def list_users_api(request):
+    """
+    Return all users in the same company group.
+
+    MAIN:
+      sees everyone in their group
+    SUB:
+      sees everyone in their group (optional behavior; you can restrict later)
+    """
+    me = request.user
+    group_id = me.follow_user_id or me.id  # same rule as getgroupid [file:21]
+
+    qs = User.objects.filter(follow_user_id=group_id).order_by("id")
+
+    data = []
+    for u in qs:
+        data.append(
+            {
+                "id": u.id,
+                "username": u.username,
+                "email": u.email,
+                "user_type": u.user_type,
+                "role": u.role.name if u.role else None,
+                "role_id": u.role_id,
+            }
+        )
+
+    return Response(data)

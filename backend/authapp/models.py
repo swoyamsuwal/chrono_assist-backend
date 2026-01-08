@@ -31,3 +31,9 @@ class User(AbstractUser):
         blank=True,
         related_name='followers',
     )
+    role = models.ForeignKey(
+        "rbac.Role",
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="users"
+    )

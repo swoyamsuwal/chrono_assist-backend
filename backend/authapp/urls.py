@@ -8,4 +8,5 @@ urlpatterns = [
     path('verify-otp/', views.verify_otp_api, name='verify_otp_api'),
     path('profile/', views.profile_api, name='profile_api'),
     path('sub-register/', views.sub_register_api, name='sub_register_api'),
+    path('list_users/', views.list_users_api, name='list_users_api'),
 ]

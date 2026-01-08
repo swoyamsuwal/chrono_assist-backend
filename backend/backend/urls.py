@@ -8,7 +8,8 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('authapp/', include('authapp.urls')),
     path('file_upload/', include('file_upload.urls')),
-    path("api/mail/", include("mail.urls")),
+    path('rbac/', include('rbac.urls')),
+    path('api/mail/', include('mail.urls')),
 
     # JWT token endpoints
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),

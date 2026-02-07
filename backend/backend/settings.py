@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'rest_framework', # Django REST Framework for APIs
     'corsheaders', # Enable cross-origin requests for frontend apps
     'storages',
+    "calendar_app",
     'rbac',
 ]
 
@@ -96,6 +97,11 @@ EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+
+# Google OAuth config (from env)
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/calendar/google/callback/")
 
 # FILE STORAGE (MinIO / S3)
 MINIO_ENDPOINT_URL = os.environ.get("MINIO_ENDPOINT_URL")

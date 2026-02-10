@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'corsheaders', # Enable cross-origin requests for frontend apps
     'storages',
     "calendar_app",
+    "tasks",
     'rbac',
 ]
 

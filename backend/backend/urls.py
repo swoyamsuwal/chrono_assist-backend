@@ -11,6 +11,7 @@ urlpatterns = [
     path('rbac/', include('rbac.urls')),
     path('api/mail/', include('mail.urls')),
     path('api/calendar/', include('calendar_app.urls')),
+    path("api/tasks/", include("tasks.urls")),
 
     # JWT token endpoints
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),

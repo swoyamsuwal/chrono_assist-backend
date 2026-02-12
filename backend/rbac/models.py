@@ -7,6 +7,8 @@ class Feature(models.TextChoices):
     PROMPT = "prompt", "Prompt"
     MAIL = "mail", "Mail"
     TASKS = "tasks", "Tasks"
+    CALENDAR = "calendar", "Calendar"
+    PERMISSION = "permission", "Permission"
 
 class Action(models.TextChoices):
     VIEW = "view", "View"

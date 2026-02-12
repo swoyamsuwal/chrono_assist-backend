@@ -1,24 +1,17 @@
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import status
 
-from authapp.utils import get_group_id  # <-- this exists in YOUR authapp/utils.py now
+from authapp.utils import get_group_id
 from .models import Role
 from .serializers import RoleSerializer, RoleCreateUpdateSerializer
+from .rbac_perms import (
+    CanViewPermissionModule,
+    CanCreateRole,
+    CanUpdateRole,
+    CanDeleteRole,
+)
 
-
-class IsMainUserRBAC:
-    def _ensure_main(self, request):
-        if getattr(request.user, "user_type", None) != "main":
-            return Response(
-                {"error": "Only MAIN user can manage roles."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        return None
-
-
-class RoleViewSet(IsMainUserRBAC, viewsets.ModelViewSet):
+class RoleViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
@@ -30,38 +23,14 @@ class RoleViewSet(IsMainUserRBAC, viewsets.ModelViewSet):
             return RoleCreateUpdateSerializer
         return RoleSerializer
 
-    def list(self, request, *args, **kwargs):
-        deny = self._ensure_main(request)
-        if deny:
-            return deny
-        return super().list(request, *args, **kwargs)
+    def get_permissions(self):
+        perms = [IsAuthenticated(), CanViewPermissionModule()]
 
-    def retrieve(self, request, *args, **kwargs):
-        deny = self._ensure_main(request)
-        if deny:
-            return deny
-        return super().retrieve(request, *args, **kwargs)
+        if self.action == "create":
+            perms.append(CanCreateRole())
+        elif self.action in ["update", "partial_update"]:
+            perms.append(CanUpdateRole())
+        elif self.action == "destroy":
+            perms.append(CanDeleteRole())
 
-    def create(self, request, *args, **kwargs):
-        deny = self._ensure_main(request)
-        if deny:
-            return deny
-        return super().create(request, *args, **kwargs)
-
-    def update(self, request, *args, **kwargs):
-        deny = self._ensure_main(request)
-        if deny:
-            return deny
-        return super().update(request, *args, **kwargs)
-
-    def partial_update(self, request, *args, **kwargs):
-        deny = self._ensure_main(request)
-        if deny:
-            return deny
-        return super().partial_update(request, *args, **kwargs)
-
-    def destroy(self, request, *args, **kwargs):
-        deny = self._ensure_main(request)
-        if deny:
-            return deny
-        return super().destroy(request, *args, **kwargs)
+        return perms

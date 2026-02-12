@@ -15,6 +15,13 @@ from rest_framework import status
 from .serializers import UserSerializer, ProfileSerializer
 from .utils import send_otp_email, generate_otp_code
 
+from .rbac_perms import (
+    CanViewPermissionModule,
+    CanCreateAccount,
+    CanUpdateAccount,
+    CanDeleteAccount,
+)
+
 User = get_user_model()
 
 # ---------- CSRF ----------
@@ -63,7 +70,7 @@ def register_api(request):
 # ---------- SUB REGISTER ----------
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanCreateAccount])
 def sub_register_api(request):
     main_user = request.user
     group_id = get_group_id(main_user)
@@ -260,7 +267,7 @@ def profile_api(request):
 
 # ---------- Data for loading sub user ----------
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanViewPermissionModule])
 def list_users_api(request):
     """
     Return all users in the same company group.

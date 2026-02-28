@@ -123,7 +123,7 @@ AWS_S3_VERIFY = False
 AWS_S3_REGION_NAME = "us-east-1"
 AWS_DEFAULT_ACL = None
 AWS_S3_ADDRESSING_STYLE = "path"
-AWS_QUERYSTRING_AUTH = False
+AWS_QUERYSTRING_AUTH = True
 
 AUTH_USER_MODEL = "authapp.User"  #  tells Django which model is your “User” model. Without it, Django uses the built‑in auth.User
 

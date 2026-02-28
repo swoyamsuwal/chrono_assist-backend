@@ -2,6 +2,9 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 User = get_user_model()
 
+from rbac.models import Role
+from file_upload.utils import get_group_id
+
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
     user_type = serializers.ChoiceField(choices=User.UserType.choices, write_only=True, default=User.UserType.MAIN)
@@ -38,3 +41,25 @@ class ProfileSerializer(serializers.ModelSerializer):
             except Exception:
                 return None
         return None
+
+class UserRoleUpdateSerializer(serializers.ModelSerializer):
+    role_id = serializers.PrimaryKeyRelatedField(
+        source="role",
+        queryset=Role.objects.all(),
+        required=True
+    )
+
+    class Meta:
+        model = User
+        fields = ["role_id"]
+
+    def validate(self, attrs):
+        request = self.context["request"]
+        me = request.user
+        group_id = get_group_id(me)
+
+        role_obj = attrs["role"]
+        if role_obj.group_id != group_id:
+            raise serializers.ValidationError({"role_id": "Invalid role for this company."})
+
+        return attrs

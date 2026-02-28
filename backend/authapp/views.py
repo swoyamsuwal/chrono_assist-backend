@@ -12,7 +12,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from .serializers import UserSerializer, ProfileSerializer
+from .serializers import UserSerializer, ProfileSerializer, UserRoleUpdateSerializer
 from .utils import send_otp_email, generate_otp_code
 
 from .rbac_perms import (
@@ -296,3 +296,28 @@ def list_users_api(request):
         )
 
     return Response(data)
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated, CanUpdateAccount])
+def update_user_role_api(request, user_id):
+    me = request.user
+    group_id = get_group_id(me)
+
+    try:
+        target = User.objects.get(id=user_id, follow_user_id=group_id)
+    except User.DoesNotExist:
+        return Response({"error": "User not found in your company."}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = UserRoleUpdateSerializer(
+        target, data=request.data, partial=True, context={"request": request}
+    )
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
+
+    # return updated row fields for UI
+    return Response({
+        "id": target.id,
+        "role": target.role.name if target.role else None,
+        "role_id": target.role_id,
+    })

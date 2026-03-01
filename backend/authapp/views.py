@@ -269,18 +269,14 @@ def profile_api(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated, CanViewPermissionModule])
 def list_users_api(request):
-    """
-    Return all users in the same company group.
-
-    MAIN:
-      sees everyone in their group
-    SUB:
-      sees everyone in their group (optional behavior; you can restrict later)
-    """
     me = request.user
-    group_id = me.follow_user_id or me.id  # same rule as getgroupid [file:21]
+    group_id = me.follow_user_id or me.id
 
-    qs = User.objects.filter(follow_user_id=group_id).order_by("id")
+    qs = (
+        User.objects
+        .filter(follow_user_id=group_id, user_type=User.UserType.SUB)
+        .order_by("id")
+    )
 
     data = []
     for u in qs:
@@ -296,6 +292,7 @@ def list_users_api(request):
         )
 
     return Response(data)
+
 
 
 @api_view(["PATCH"])
@@ -321,3 +318,21 @@ def update_user_role_api(request, user_id):
         "role": target.role.name if target.role else None,
         "role_id": target.role_id,
     })
+    
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated, CanDeleteAccount])
+def delete_user_api(request, user_id):
+    me = request.user
+    group_id = get_group_id(me)
+
+    try:
+        target = User.objects.get(id=user_id, follow_user_id=group_id)
+    except User.DoesNotExist:
+        return Response({"error": "User not found in your company."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Optional safety: prevent deleting yourself
+    if target.id == me.id:
+        return Response({"error": "You cannot delete your own account."}, status=status.HTTP_400_BAD_REQUEST)
+
+    target.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)

@@ -37,3 +37,5 @@ class User(AbstractUser):
         on_delete=models.SET_NULL,
         related_name="users"
     )
+    
+    email = models.EmailField(unique=True)

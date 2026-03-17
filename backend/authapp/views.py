@@ -306,15 +306,33 @@ def update_user_role_api(request, user_id):
     except User.DoesNotExist:
         return Response({"error": "User not found in your company."}, status=status.HTTP_404_NOT_FOUND)
 
-    serializer = UserRoleUpdateSerializer(
-        target, data=request.data, partial=True, context={"request": request}
-    )
-    serializer.is_valid(raise_exception=True)
-    serializer.save()
+    # ── Handle email update ──────────────────────────────────────
+    new_email = request.data.get("email", "").strip()
+    if new_email and new_email != target.email:
+        if User.objects.filter(email=new_email).exclude(id=user_id).exists():
+            return Response(
+                {"email": ["This email is already in use."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        target.email = new_email
+        target.save(update_fields=["email"])
+    # ─────────────────────────────────────────────────────────────
 
-    # return updated row fields for UI
+    # ── Handle role update (only if role_id provided) ────────────
+    if "role_id" in request.data:
+        serializer = UserRoleUpdateSerializer(
+            target, data=request.data, partial=True, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+    # ─────────────────────────────────────────────────────────────
+
+    # Refresh from DB to get latest state
+    target.refresh_from_db()
+
     return Response({
         "id": target.id,
+        "email": target.email,
         "role": target.role.name if target.role else None,
         "role_id": target.role_id,
     })

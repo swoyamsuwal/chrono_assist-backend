@@ -144,15 +144,18 @@ def list_events(request):
 
     service = build_calendar_service(creds)
 
-    time_min = (datetime.utcnow() - timedelta(days=60)).isoformat() + "Z"
+    # Fetch a wide range: 1 year back and 1 year forward
+    time_min = (datetime.utcnow() - timedelta(days=365)).isoformat() + "Z"
+    time_max = (datetime.utcnow() + timedelta(days=365)).isoformat() + "Z"
+
     events_result = service.events().list(
         calendarId="primary",
         timeMin=time_min,
-        maxResults=250,
+        timeMax=time_max,
+        maxResults=500,        # increase from 250
         singleEvents=True,
         orderBy="startTime",
     ).execute()
-
     items = events_result.get("items", [])
     return Response(items, status=status.HTTP_200_OK)
 

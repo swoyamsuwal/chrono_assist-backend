@@ -12,6 +12,9 @@ from .embedding_file import create_embeddings_for_document
 from .utils import get_group_id  # helper
 from ollama import Client
 
+import boto3
+from django.conf import settings
+
 # ---------------- RAG Configuration ----------------
 EMBEDDING_MODEL_NAME = "all-minilm:l6-v2"
 LLM_MODEL_NAME = "llama3.2:3b"
@@ -187,3 +190,166 @@ def rag_chat(request):
 
     except Exception as e:
         return Response({"error": f"RAG failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# ─────────────────────────────────────────────
+# VIEW 1 : Generate presigned MinIO URL for preview
+# ─────────────────────────────────────────────
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def preview_file(request, document_id):
+    group_id = get_group_id(request.user)
+
+    try:
+        doc = Document.objects.get(id=document_id, follow_group=group_id)
+    except Document.DoesNotExist:
+        return Response({"error": "Document not found."}, status=404)
+
+    s3_client = boto3.client(
+        "s3",
+        endpoint_url=settings.AWS_S3_ENDPOINT_URL,
+        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+        config=boto3.session.Config(signature_version="s3v4"),
+    )
+
+    presigned_url = s3_client.generate_presigned_url(
+        "get_object",
+        Params={
+            "Bucket": settings.AWS_STORAGE_BUCKET_NAME,
+            "Key": doc.file.name,
+        },
+        ExpiresIn=600,  # 10 minutes
+    )
+
+    return Response(
+        {
+            "url": presigned_url,
+            "mime_type": doc.mime_type,
+            "filename": doc.original_filename,
+            "is_embedded": doc.is_embedded,
+        }
+    )
+
+
+# ─────────────────────────────────────────────
+# VIEW 2 : Document-scoped RAG chat
+# ─────────────────────────────────────────────
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, CanRagChat])
+def doc_chat(request):
+    group_id    = get_group_id(request.user)
+    document_id = request.data.get("document_id", "").strip()
+    question    = request.data.get("question",    "").strip()
+    history     = request.data.get("history",     []) or []
+
+    if not document_id:
+        return Response({"error": "document_id is required."}, status=400)
+    if not question:
+        return Response({"error": "question is required."}, status=400)
+
+    # Guard: doc must exist, belong to this group, AND be embedded
+    try:
+        doc = Document.objects.get(
+            id=document_id,
+            follow_group=group_id,
+            is_embedded=True,
+        )
+    except Document.DoesNotExist:
+        return Response(
+            {"error": "Document not found or has not been embedded yet."},
+            status=404,
+        )
+
+    try:
+        # 1. Embed the question
+        query_vector = embed_query(question)
+
+        # 2. Retrieve chunks ONLY from this one document (scoped by document_id)
+        qs = (
+            DocumentChunk.objects
+            .filter(document_id=doc.id)
+            .annotate(distance=CosineDistance("embedding", query_vector))
+            .order_by("distance")[:10]
+        )
+
+        if not qs.exists():
+            return Response({"answer": "No content found for this document."})
+
+        # 3. Convert QuerySet → list[dict] so build_prompt() can consume it
+        #    (same shape that search_similar_chunks() returns)
+        chunks = [
+            {"id": str(c.id), "text": c.text, "document_id": str(c.document_id)}
+            for c in qs
+        ]
+
+        # 4. Build prompt using the existing helper
+        prompt = build_prompt(question, chunks, history)
+
+        # 5. Ask Ollama — same pattern as rag_chat
+        client = Client()
+        resp = client.chat(
+            model=LLM_MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        answer = resp["message"]["content"]
+
+        return Response({
+            "answer":       answer,
+            "document_id":  str(doc.id),
+            "filename":     doc.original_filename,
+            "chunk_count":  len(chunks),
+        }, status=200)
+
+    except Exception as e:
+        return Response(
+            {"error": f"Doc chat failed: {str(e)}"},
+            status=500,
+        )
+
+    group_id = get_group_id(request.user)
+    document_id = request.data.get("document_id", "").strip()
+    question    = request.data.get("question", "").strip()
+    history     = request.data.get("history", [])
+
+    if not document_id:
+        return Response({"error": "document_id is required."}, status=400)
+    if not question:
+        return Response({"error": "question is required."}, status=400)
+
+    # ── Guard: doc must exist, belong to this group, AND be embedded ──
+    try:
+        doc = Document.objects.get(
+            id=document_id,
+            follow_group=group_id,
+            is_embedded=True,       # block non-embedded docs
+        )
+    except Document.DoesNotExist:
+        return Response(
+            {"error": "Document not found or has not been embedded yet."},
+            status=404,
+        )
+
+    # ── Embed the question ──
+    query_vector = embed_query(question)   # your existing helper
+
+    # ── Retrieve chunks ONLY from this one document ──
+    chunks = (
+        DocumentChunk.objects.filter(document_id=doc.id)
+        .annotate(distance=CosineDistance("embedding", query_vector))
+        .order_by("distance")[:10]
+    )
+
+    if not chunks.exists():
+        return Response({"answer": "No content found for this document."})
+
+    # ── Build prompt (reuse your existing helper) ──
+    answer = build_and_ask(question, chunks, history)   # your existing helper
+
+    return Response(
+        {
+            "answer": answer,
+            "document_id": str(doc.id),
+            "filename": doc.original_filename,
+            "chunk_count": chunks.count(),
+        }
+    )

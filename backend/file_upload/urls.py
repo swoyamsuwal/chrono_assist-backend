@@ -6,5 +6,7 @@ urlpatterns = [
     path("upload_file/", views.upload_file, name="upload_file"),
     path("delete_file/", views.delete_file, name="delete_file"),
     path("embed_file/", views.embed_file, name="embed_file"), 
-    path("rag_chat/", views.rag_chat, name="rag_chat"),  # NEW
+    path("rag_chat/", views.rag_chat, name="rag_chat"),
+    path("preview_file/<uuid:document_id>/", views.preview_file, name="preview_file"),
+    path("doc_chat/", views.doc_chat, name="doc_chat"),
 ]

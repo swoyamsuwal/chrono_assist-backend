@@ -4,7 +4,7 @@ from django.utils import timezone
 from django.contrib.auth import authenticate, login, get_user_model
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.csrf import csrf_exempt
-from rbac.models import Role
+from rbac.models import Role, RolePermission
 from file_upload.utils import get_group_id 
 
 from rest_framework.decorators import api_view, permission_classes
@@ -39,20 +39,36 @@ def get_csrf(request):
 @permission_classes([AllowAny])
 def register_api(request):
     serializer = UserSerializer(data=request.data)
-
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    # Save user from validated serializer
     user = serializer.save()
-    
-    # If MAIN user, set follow_user to SELF
-    if user.user_type == User.UserType.MAIN:
-        user.follow_user = user  # Self-reference!
-        user.save(update_fields=['follow_user'])
-        print(f"MAIN user {user.id} → self-follow set")
-    
-    login(request, user, backend='authapp.auth_backend.EmailAuthBackend')
+
+    # register_api is always for MAIN users only
+    user.follow_user = user  # self-reference
+
+    # Get the seeded template role (group_id=0 sentinel)
+    try:
+        template_role = Role.objects.prefetch_related("perms").get(
+            group_id=0, name="Owner"
+        )
+        template_perms = list(template_role.perms.all())
+    except Role.DoesNotExist:
+        template_perms = []
+
+    # Create this user's own Owner role using template permissions
+    owner_role = Role.objects.create(group_id=user.id, name="Owner")
+    if template_perms:
+        RolePermission.objects.bulk_create([
+            RolePermission(role=owner_role, feature=p.feature, action=p.action)
+            for p in template_perms
+        ])
+
+    user.role = owner_role
+    user.save(update_fields=["follow_user", "role"])
+
+    login(request, user, backend="authapp.auth_backend.EmailAuthBackend")
+
     return Response(
         {
             "message": "User registered successfully",
@@ -61,12 +77,13 @@ def register_api(request):
                 "username": user.username,
                 "email": user.email,
                 "user_type": user.user_type,
-                "follow_user": user.follow_user_id if user.follow_user else None
+                "follow_user": user.follow_user_id if user.follow_user else None,
+                "role": user.role.name if user.role else None,
             },
         },
         status=status.HTTP_201_CREATED,
     )
-
+    
 # ---------- SUB REGISTER ----------
 
 @api_view(['POST'])
@@ -354,3 +371,14 @@ def delete_user_api(request, user_id):
 
     target.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_permissions(request):
+    user = request.user
+    if user.user_type == User.UserType.MAIN:  # ← was user.usertype
+        return Response({"is_main": True, "permissions": []})
+    if not user.role_id:
+        return Response({"is_main": False, "permissions": []})
+    perms = RolePermission.objects.filter(role_id=user.role_id).values("feature", "action")
+    return Response({"is_main": False, "permissions": list(perms)})

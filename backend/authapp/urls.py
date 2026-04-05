@@ -11,4 +11,7 @@ urlpatterns = [
     path('list_users/', views.list_users_api, name='list_users_api'),
     path("users/<int:user_id>/role/", views.update_user_role_api, name="update_user_role"),
     path("users/<int:user_id>/", views.delete_user_api, name="delete_user"),
+    
+    #permission
+    path('my-permissions/', views.my_permissions, name='my-permissions'),
 ]

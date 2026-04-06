@@ -7,6 +7,8 @@ OWNER_PERMISSIONS = [
     ("prompt", "delete"), ("prompt", "execute"),
     ("mail", "view"), ("mail", "create"), ("mail", "update"),
     ("mail", "delete"), ("mail", "execute"),
+    ("bulk_mail", "view"), ("bulk_mail", "create"), ("bulk_mail", "update"),  
+    ("bulk_mail", "delete"), ("bulk_mail", "execute"),
     ("tasks", "view"), ("tasks", "create"), ("tasks", "update"),
     ("tasks", "delete"), ("tasks", "execute"),
     ("calendar", "view"), ("calendar", "create"), ("calendar", "update"),

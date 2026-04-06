@@ -6,6 +6,7 @@ class Feature(models.TextChoices):
     FILES = "files", "Files"
     PROMPT = "prompt", "Prompt"
     MAIL = "mail", "Mail"
+    BULK_MAIL = "bulk_mail",  "Bulk Mail"
     TASKS = "tasks", "Tasks"
     CALENDAR = "calendar", "Calendar"
     PERMISSION = "permission", "Permission"

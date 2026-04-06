@@ -14,7 +14,15 @@ from authapp.utils import get_group_id
 
 from .llm_client import generate_email_draft
 from .models import CampaignRecipient, EmailCampaign
-from .rbac_perms import CanSendMail, CanViewMail
+from .rbac_perms import (
+    CanViewMail,
+    CanSendMail,
+    CanViewBulkMail,
+    CanCreateBulkMail,
+    CanEditBulkMail,
+    CanDeleteBulkMail,
+    CanSendBulkMail,
+)
 from .serializers import (
     BulkSendSerializer,
     CampaignRecipientSerializer,
@@ -25,7 +33,7 @@ from .serializers import (
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Existing views — unchanged
+# One-on-one Mail views
 # ─────────────────────────────────────────────────────────────────────────────
 
 class GenerateEmailView(APIView):
@@ -62,21 +70,12 @@ class SendEmailView(APIView):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _extract_name(email: str) -> str:
-    """
-    ram@gmail.com      → 'Ram'
-    john.doe@work.com  → 'John'
-    john_doe@work.com  → 'John'
-    """
     local = email.split("@")[0]
     first = local.replace(".", "_").split("_")[0]
     return first.capitalize()
 
 
 def _get_campaign(pk: int, group_id: int):
-    """
-    Fetch a campaign by PK scoped to the user's group.
-    Returns None if not found — callers must handle the 404.
-    """
     try:
         return EmailCampaign.objects.get(pk=pk, group_id=group_id)
     except EmailCampaign.DoesNotExist:
@@ -89,10 +88,13 @@ def _get_campaign(pk: int, group_id: int):
 
 class CampaignListCreateView(APIView):
     """
-    GET  /api/mail/campaigns/       → list all campaigns for the current group
-    POST /api/mail/campaigns/       → create a new campaign (name only)
+    GET  /api/mail/campaigns/   → list campaigns
+    POST /api/mail/campaigns/   → create campaign
     """
-    permission_classes = [IsAuthenticated, CanViewMail]
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [IsAuthenticated(), CanViewBulkMail()]
+        return [IsAuthenticated(), CanCreateBulkMail()]
 
     def get(self, request):
         campaigns = EmailCampaign.objects.filter(
@@ -103,8 +105,10 @@ class CampaignListCreateView(APIView):
     def post(self, request):
         name = request.data.get("name", "").strip()
         if not name:
-            return Response({"error": "name is required"}, status=status.HTTP_400_BAD_REQUEST)
-
+            return Response(
+                {"error": "name is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         campaign = EmailCampaign.objects.create(
             group_id=get_group_id(request.user),
             name=name,
@@ -118,11 +122,16 @@ class CampaignListCreateView(APIView):
 
 class CampaignDetailView(APIView):
     """
-    GET    /api/mail/campaigns/<pk>/  → fetch one campaign (with recipients)
-    PATCH  /api/mail/campaigns/<pk>/  → update name, subject, body (any combo)
-    DELETE /api/mail/campaigns/<pk>/  → delete campaign + all its recipients
+    GET    /api/mail/campaigns/<pk>/   → fetch one campaign
+    PATCH  /api/mail/campaigns/<pk>/   → update name/subject/body
+    DELETE /api/mail/campaigns/<pk>/   → delete campaign
     """
-    permission_classes = [IsAuthenticated, CanViewMail]
+    def get_permissions(self):
+        if self.request.method == "DELETE":
+            return [IsAuthenticated(), CanDeleteBulkMail()]
+        if self.request.method == "PATCH":
+            return [IsAuthenticated(), CanEditBulkMail()]
+        return [IsAuthenticated(), CanViewBulkMail()]   # GET
 
     def get(self, request, pk):
         obj = _get_campaign(pk, get_group_id(request.user))
@@ -134,15 +143,12 @@ class CampaignDetailView(APIView):
         obj = _get_campaign(pk, get_group_id(request.user))
         if not obj:
             return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
-
-        # Update only the fields that were actually sent in the request
         if name := request.data.get("name", "").strip():
             obj.name = name
         if "subject" in request.data:
             obj.subject = request.data["subject"].strip()
         if "body" in request.data:
             obj.body = request.data["body"].strip()
-
         obj.save()
         return Response(EmailCampaignSerializer(obj).data)
 
@@ -160,23 +166,21 @@ class CampaignDetailView(APIView):
 
 class CampaignRecipientsView(APIView):
     """
-    GET  /api/mail/campaigns/<pk>/recipients/
-        → list all recipients for this campaign
-
-    POST /api/mail/campaigns/<pk>/recipients/
-        → add recipients via:
-           a) JSON body: { "emails": ["a@b.com", "c@d.com"] }
-           b) File upload: multipart field "file" (CSV or TXT, one email per line)
-           Duplicate emails are silently skipped (unique_together enforced at DB level).
+    GET  /api/mail/campaigns/<pk>/recipients/   → list recipients
+    POST /api/mail/campaigns/<pk>/recipients/   → add recipients (JSON or file)
     """
-    permission_classes = [IsAuthenticated, CanSendMail]
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [IsAuthenticated(), CanViewBulkMail()]
+        return [IsAuthenticated(), CanSendBulkMail()]
 
     def get(self, request, pk):
         obj = _get_campaign(pk, get_group_id(request.user))
         if not obj:
             return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
-        serializer = CampaignRecipientSerializer(obj.recipients.all(), many=True)
-        return Response(serializer.data)
+        return Response(
+            CampaignRecipientSerializer(obj.recipients.all(), many=True).data
+        )
 
     def post(self, request, pk):
         obj = _get_campaign(pk, get_group_id(request.user))
@@ -194,46 +198,37 @@ class CampaignRecipientsView(APIView):
             except ValidationError:
                 skipped.append(email)
                 return
-
             name = _extract_name(email)
             _, created = CampaignRecipient.objects.get_or_create(
                 campaign=obj,
                 email=email,
                 defaults={"name": name},
             )
-            if created:
-                added.append(email)
-            else:
-                skipped.append(email)
+            (added if created else skipped).append(email)
 
-        # Option A — file upload (CSV or TXT)
         uploaded_file = request.FILES.get("file")
         if uploaded_file:
             content = uploaded_file.read().decode("utf-8", errors="ignore")
             for line in content.splitlines():
-                # Handle CSV: take only the first column if commas present
-                email_candidate = line.split(",")[0].strip().strip('"')
-                _add_one(email_candidate)
+                _add_one(line.split(",")[0].strip().strip('"'))
 
-        # Option B — JSON list
         for email in request.data.get("emails", []):
             _add_one(str(email))
 
-        return Response({
-            "added":              added,
-            "skipped_duplicates": skipped,
-        })
+        return Response({"added": added, "skipped_duplicates": skipped})
 
 
 class CampaignRecipientDetailView(APIView):
     """
-    PATCH  /api/mail/campaigns/<pk>/recipients/<rid>/  → edit recipient's display name
-    DELETE /api/mail/campaigns/<pk>/recipients/<rid>/  → remove recipient from campaign
+    PATCH  /api/mail/campaigns/<pk>/recipients/<rid>/   → edit name
+    DELETE /api/mail/campaigns/<pk>/recipients/<rid>/   → remove
     """
-    permission_classes = [IsAuthenticated, CanSendMail]
+    def get_permissions(self):
+        if self.request.method == "DELETE":
+            return [IsAuthenticated(), CanDeleteBulkMail()]
+        return [IsAuthenticated(), CanEditBulkMail()]
 
-    def _get_recipient(self, pk: int, rid: int, group_id: int):
-        """Returns (campaign, recipient) or (None, None) if either not found."""
+    def _get_recipient(self, pk, rid, group_id):
         obj = _get_campaign(pk, group_id)
         if not obj:
             return None, None
@@ -246,19 +241,15 @@ class CampaignRecipientDetailView(APIView):
         _, recipient = self._get_recipient(pk, rid, get_group_id(request.user))
         if not recipient:
             return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
-
-        new_name = request.data.get("name", "").strip()
-        if new_name:
+        if new_name := request.data.get("name", "").strip():
             recipient.name = new_name
             recipient.save()
-
         return Response(CampaignRecipientSerializer(recipient).data)
 
     def delete(self, request, pk, rid):
         _, recipient = self._get_recipient(pk, rid, get_group_id(request.user))
         if not recipient:
             return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
-
         recipient.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -270,31 +261,20 @@ class CampaignRecipientDetailView(APIView):
 class CampaignBulkSendView(APIView):
     """
     POST /api/mail/campaigns/<pk>/send/
-
-    Sends the campaign's stored draft to all recipients.
-    Fails fast (400) if:
-      - No subject/body draft has been saved yet
-      - The campaign has zero recipients
-
-    Emails are sent in a background thread using send_mass_mail
-    (one SMTP connection for all messages) so the API responds instantly.
-    Each email is personalised: "Dear {name}," prepended to the body.
     """
-    permission_classes = [IsAuthenticated, CanSendMail]
+    permission_classes = [IsAuthenticated, CanSendBulkMail]
 
     def post(self, request, pk):
         obj = _get_campaign(pk, get_group_id(request.user))
         if not obj:
             return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        # Guard 1 — draft must exist
         if not obj.subject or not obj.body:
             return Response(
                 {"error": "No email draft saved. Click 'Edit Draft' to write the subject and body first."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Guard 2 — must have recipients
         recipients = list(obj.recipients.all())
         if not recipients:
             return Response(
@@ -302,8 +282,6 @@ class CampaignBulkSendView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Build one personalised message tuple per recipient
-        # send_mass_mail format: (subject, message, from_email, [recipient_list])
         messages = tuple(
             (
                 obj.subject,
@@ -314,16 +292,12 @@ class CampaignBulkSendView(APIView):
             for r in recipients
         )
 
-        # Fire and forget — background thread, no Celery needed
         def _send_all():
             send_mass_mail(messages, fail_silently=True)
 
         threading.Thread(target=_send_all, daemon=True).start()
 
         return Response(
-            {
-                "queued":            True,
-                "total_recipients":  len(recipients),
-            },
+            {"queued": True, "total_recipients": len(recipients)},
             status=status.HTTP_200_OK,
         )

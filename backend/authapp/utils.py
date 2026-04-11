@@ -1,18 +1,39 @@
+# ===============================================================
+#  authapp/utils.py
+#  Utility functions for OTP generation, email sending, and group resolution
+#  These are pure helper functions — no Django views or models defined here
+# ===============================================================
+
+
+# ---------------- Step 0: Imports ----------------
 import random
 import string
 from datetime import datetime
-from django.core.mail import send_mail
+from django.core.mail import send_mail  # Django's built-in email sender (uses EMAIL_* settings)
 from django.conf import settings
 
 
+# ================================================================
+#  Utility 1: generate_otp_code
+#  Generates a random N-digit numeric string
+#  Default length is 6 (e.g., "482910")
+# ================================================================
 def generate_otp_code(length=6) -> str:
+    # string.digits = "0123456789" — picks random digits to build the OTP
     return ''.join(random.choice(string.digits) for _ in range(length))
 
 
+# ================================================================
+#  Utility 2: build_otp_html
+#  Builds a styled HTML email body showing the OTP as individual digit boxes
+#  Pure string-building — no DB or Django logic here
+# ================================================================
 def build_otp_html(code: str, purpose: str = "Login") -> str:
     year = datetime.now().year
-    digits = list(code)
+    digits = list(code)  # Split "482910" → ["4","8","2","9","1","0"]
 
+    # ---------------- Step 2a: Build Individual Digit Boxes ----------------
+    # Each digit gets its own styled <span> box for a clean visual layout in the email
     digit_boxes = "".join([
         f"""<span style="
             display:inline-block;
@@ -32,8 +53,10 @@ def build_otp_html(code: str, purpose: str = "Login") -> str:
         for d in digits
     ])
 
+    # ---------------- Step 2b: Return Full HTML Email ----------------
+    # Inline styles are used throughout because many email clients strip <style> tags
     return f"""
-    <html>
+   <html>
       <body style="margin:0;padding:0;background-color:#f9fafb;">
         <table width="100%" cellpadding="0" cellspacing="0"
                style="background-color:#f9fafb;padding:40px 0;">
@@ -152,17 +175,27 @@ def build_otp_html(code: str, purpose: str = "Login") -> str:
     """
 
 
+# ================================================================
+#  Utility 3: send_otp_email
+#  Sends the OTP email to the user via Django's email backend
+#  Returns True on success, False on failure (never raises to caller)
+# ================================================================
 def send_otp_email(to_email: str, code: str, purpose: str = "Login") -> bool:
     try:
+        # ---------------- Step 3a: Build Email Content ----------------
         subject = f"Your {purpose} OTP Code — Chrono Assist"
+        # Plain-text fallback for email clients that don't render HTML
         text_message = (
             f"Your {purpose} OTP code is: {code}\n"
             f"It will expire in 5 minutes.\n\n"
             f"If you didn't request this, ignore this email."
         )
-        html_message = build_otp_html(code, purpose)
+        html_message = build_otp_html(code, purpose)  # Rich HTML version
         from_email = getattr(settings, 'EMAIL_HOST_USER', 'noreply@chronoassist.com')
 
+        # ---------------- Step 3b: Send via Django Mail ----------------
+        # Django routes this through whatever EMAIL_BACKEND is set in settings.py
+        # fail_silently=False → raises exception if sending fails (caught below)
         send_mail(
             subject,
             text_message,
@@ -174,9 +207,17 @@ def send_otp_email(to_email: str, code: str, purpose: str = "Login") -> bool:
         return True
 
     except Exception as e:
+        # Log the error but don't crash the view that called this
         print(f"[OTP EMAIL ERROR] Failed to send to {to_email}: {e}")
         return False
 
 
+# ================================================================
+#  Utility 4: get_group_id
+#  Resolves which "company group" a user belongs to
+#  MAIN user  → their own ID is the group_id (they ARE the root)
+#  SUB user   → their MAIN user's ID is the group_id
+#  This is used to scope DB queries so users can't see other companies' data
+# ================================================================
 def get_group_id(user) -> int:
     return user.follow_user_id or user.id

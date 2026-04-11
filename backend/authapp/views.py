@@ -297,16 +297,22 @@ def list_users_api(request):
 
     data = []
     for u in qs:
-        data.append(
-            {
-                "id": u.id,
-                "username": u.username,
-                "email": u.email,
-                "user_type": u.user_type,
-                "role": u.role.name if u.role else None,
-                "role_id": u.role_id,
-            }
-        )
+        pic = None
+        if u.profile_picture:
+            try:
+                pic = request.build_absolute_uri(u.profile_picture.url)
+            except Exception:
+                pic = None
+
+        data.append({
+            "id":                  u.id,
+            "username":            u.username,
+            "email":               u.email,
+            "user_type":           u.user_type,
+            "role":                u.role.name if u.role else None,
+            "role_id":             u.role_id,
+            "profile_picture_url": pic,  
+        })
 
     return Response(data)
 

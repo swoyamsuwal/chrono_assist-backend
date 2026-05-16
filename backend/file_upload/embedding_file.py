@@ -119,8 +119,8 @@ def extract_text_from_path(file_path: str, mime_type: str) -> str:
 # ================================================================
 def chunk_text(text: str):
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,    # Max characters per chunk
-        chunk_overlap=200,  # Characters shared between adjacent chunks
+        chunk_size=400,    # Max characters per chunk
+        chunk_overlap=50,  # Characters shared between adjacent chunks
         length_function=len,
     )
     return splitter.split_text(text)  # Returns list[str]

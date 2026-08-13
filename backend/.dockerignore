@@ -1,0 +1,11 @@
+.git
+.env
+__pycache__
+*.py[cod]
+*.log
+.venv
+venv
+env
+media
+staticfiles
+minio-data

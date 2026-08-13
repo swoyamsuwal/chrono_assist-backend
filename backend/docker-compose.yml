@@ -1,16 +1,108 @@
-version: "3.8"
-
 services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: chrono-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: chrono
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chrono"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   minio:
     image: minio/minio:latest
-    container_name: minio
+    container_name: chrono-minio
     restart: unless-stopped
-    ports:
-      - "9000:9000"  # S3 API endpoint
-      - "9001:9001"  # Web console
+    command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin123
-    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
     volumes:
-      - ./minio-data:/data
+      - minio_data:/data
+
+  # Creates the MinIO bucket automatically.
+  minio-init:
+    image: minio/mc:latest
+    container_name: chrono-minio-init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 minioadmin minioadmin123; do
+        echo 'Waiting for MinIO...';
+        sleep 2;
+      done;
+      mc mb --ignore-existing local/chrono-assist;
+      mc anonymous set download local/chrono-assist;
+      echo 'MinIO bucket is ready.';
+      "
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: chrono-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  # Downloads the models required by Calendar AI and RAG embeddings.
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: chrono-ollama-init
+    depends_on:
+      - ollama
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: >
+      /bin/sh -c "
+      until ollama list; do
+        echo 'Waiting for Ollama...';
+        sleep 3;
+      done;
+      ollama pull llama3.2:3b;
+      ollama pull all-minilm:l6-v2;
+      echo 'Ollama models are ready.';
+      "
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chrono-api
+    restart: unless-stopped
+    command: >
+      sh -c "
+      python manage.py migrate &&
+      python manage.py runserver 0.0.0.0:8000
+      "
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      ollama:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  minio_data:
+  ollama_data:
